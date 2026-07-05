@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FC26 Scouting Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Player Scouting AI Agent</p>
+          <h1>FC26 선수 스카우팅 리포트</h1>
+        </div>
+        <div class="status" id="dataStatus">데이터 확인 중</div>
+      </section>
+
+      <section class="filters">
+        <label>
+          <span>검색</span>
+          <input id="searchInput" placeholder="선수명" />
+        </label>
+        <label>
+          <span>포지션</span>
+          <select id="positionSelect"></select>
+        </label>
+        <label>
+          <span>프리셋</span>
+          <select id="presetSelect">
+            <option value="balanced">균형형</option>
+            <option value="ready_now">즉시전력형</option>
+            <option value="prospect">유망주형</option>
+            <option value="value">가성비형</option>
+            <option value="geo">지역 스카우팅형</option>
+          </select>
+        </label>
+        <label>
+          <span>지역</span>
+          <select id="regionSelect"></select>
+        </label>
+        <label>
+          <span>국적</span>
+          <select id="nationalitySelect"></select>
+        </label>
+        <label>
+          <span>리그</span>
+          <select id="leagueSelect"></select>
+        </label>
+        <label>
+          <span>최대 나이</span>
+          <input id="maxAgeInput" type="number" min="15" max="60" placeholder="예: 24" />
+        </label>
+        <label>
+          <span>최대 몸값 EUR</span>
+          <input id="maxValueInput" type="number" min="0" step="1000000" placeholder="예: 30000000" />
+        </label>
+      </section>
+
+      <section class="position-categories" aria-label="영입 포지션 카테고리">
+        <div class="category-head">
+          <h2>영입 포지션 카테고리</h2>
+          <span id="positionSummary">전체 포지션</span>
+        </div>
+        <div id="positionCategoryButtons" class="category-buttons"></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel table-panel">
+          <div class="panel-head">
+            <h2>가중치 기반 랭킹</h2>
+            <button id="refreshButton">조회</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>순위</th>
+                  <th>선수</th>
+                  <th>포지션</th>
+                  <th>클럽</th>
+                  <th>국적</th>
+                  <th>나이</th>
+                  <th>OVR</th>
+                  <th>POT</th>
+                  <th>점수</th>
+                  <th>스쿼드</th>
+                </tr>
+              </thead>
+              <tbody id="playerRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="my-team panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">My Team Board</p>
+            <h2>나의 팀 페이지</h2>
+          </div>
+          <button id="resetSquadButton" type="button">초기화</button>
+        </div>
+
+        <div class="team-controls">
+          <label>
+            <span>팀 리그</span>
+            <select id="teamLeagueSelect"></select>
+          </label>
+          <label>
+            <span>팀 선택</span>
+            <select id="teamClubSelect"></select>
+          </label>
+          <label>
+            <span>전술</span>
+            <select id="formationSelect"></select>
+          </label>
+          <label>
+            <span>전술선택</span>
+            <select id="tacticSelect">
+              <option value="기본전술">기본전술</option>
+              <option value="공격전술">공격전술</option>
+              <option value="수비전술">수비전술</option>
+              <option value="역습전술">역습전술</option>
+            </select>
+          </label>
+          <label>
+            <span>플랜</span>
+            <select id="planSelect">
+              <option value="base">기본전술</option>
+              <option value="plan_b">플랜 B</option>
+              <option value="plan_c">플랜 C</option>
+              <option value="plan_d">플랜 D</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="team-board">
+          <div class="pitch-wrap">
+            <div class="pitch" id="formationPitch"></div>
+          </div>
+
+          <aside class="squad-side">
+            <div class="squad-summary">
+              <h3 id="squadTitle">우리팀 스쿼드</h3>
+              <p id="squadMeta">팀과 전술을 선택해주세요.</p>
+            </div>
+
+            <div class="slot-tools">
+              <label>
+                <span>선택 슬롯</span>
+                <select id="slotSelect"></select>
+              </label>
+              <p id="slotHint">포지션 카드를 누르거나 슬롯을 선택한 뒤 검색 결과 선수를 추가하세요.</p>
+            </div>
+
+            <div>
+              <h3>예비선수</h3>
+              <div id="benchList" class="bench-list"></div>
+            </div>
+          </aside>
+        </div>
+        </article>
+
+        <article class="panel report-panel">
+          <div class="panel-head">
+            <h2>스카우팅 Chat Agent</h2>
+            <span id="reportSource" class="source-label"></span>
+          </div>
+          <div id="playerCard" class="player-card"></div>
+          <div id="scoreBars" class="bars compact"></div>
+          <div class="quick-questions">
+            <button data-question="이 선수를 데려올 때의 잠재력과 강점이 뭐야?">잠재력/강점</button>
+            <button data-question="이 선수를 데려올 때의 가장 큰 리스크가 뭐야?">가장 큰 리스크</button>
+          </div>
+          <div id="chatLog" class="chat-log"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" placeholder="예: 이 선수를 데려올 때의 잠재력과 강점이 뭐야?" />
+            <button type="submit">질문</button>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
