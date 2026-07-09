@@ -5,8 +5,9 @@ from pathlib import Path
 
 import requests
 
-from app.fc26_loader import PLAYER_IMAGE_DIR, load_fc26_players
-from app.fc26_scoring import rank_players
+from app.core.config import PLAYER_IMAGE_DIR
+from app.services.fc26_loader import load_fc26_players
+from app.services.fc26_scoring import rank_players
 
 
 def parse_args() -> argparse.Namespace:

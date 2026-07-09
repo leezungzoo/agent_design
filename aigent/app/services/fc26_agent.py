@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from urllib.parse import quote
 
 import requests
+
+from app.core.config import ENV_PATH
 
 try:
     from dotenv import load_dotenv
@@ -12,7 +14,6 @@ except ImportError:
         return False
 
 
-ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(ENV_PATH)
 
 
@@ -34,6 +35,82 @@ def money(value: float) -> str:
     if value >= 1_000:
         return f"€{value / 1_000:.0f}K"
     return f"€{value:.0f}"
+
+
+def wikipedia_headers() -> dict:
+    return {
+        "User-Agent": "FC26ScoutingAgent/1.0 (local scouting research app)",
+        "Accept": "application/json",
+    }
+
+
+def wikipedia_search_title(query: str, language: str = "en") -> str:
+    if not query.strip():
+        return ""
+    response = requests.get(
+        f"https://{language}.wikipedia.org/w/api.php",
+        params={
+            "action": "query",
+            "list": "search",
+            "srsearch": query,
+            "format": "json",
+            "srlimit": 1,
+        },
+        headers=wikipedia_headers(),
+        timeout=8,
+    )
+    response.raise_for_status()
+    results = response.json().get("query", {}).get("search", [])
+    return results[0].get("title", "") if results else ""
+
+
+def wikipedia_summary(title: str, language: str = "en") -> dict:
+    if not title.strip():
+        return {}
+    response = requests.get(
+        f"https://{language}.wikipedia.org/api/rest_v1/page/summary/{quote(title, safe='')}",
+        headers=wikipedia_headers(),
+        timeout=8,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return {
+        "title": data.get("title", ""),
+        "description": data.get("description", ""),
+        "extract": data.get("extract", ""),
+        "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+        "source": "Wikipedia",
+        "language": language,
+    }
+
+
+def fetch_wikipedia_context(player: dict) -> dict:
+    name = player.get("long_name") or player.get("short_name") or ""
+    nationality = player.get("nationality_name") or ""
+    query = f"{name} footballer {nationality}".strip()
+
+    for language in ("en", "ko"):
+        try:
+            title = wikipedia_search_title(query, language=language)
+            if title:
+                summary = wikipedia_summary(title, language=language)
+                if summary.get("extract"):
+                    return summary
+        except Exception:
+            continue
+    return {}
+
+
+def format_wikipedia_context(context: dict) -> str:
+    if not context:
+        return "Wikipedia 공개 정보: 찾지 못함"
+    return (
+        f"Wikipedia 공개 정보({context.get('language', 'en')}):\n"
+        f"- 제목: {context.get('title')}\n"
+        f"- 설명: {context.get('description')}\n"
+        f"- 요약: {context.get('extract')}\n"
+        f"- URL: {context.get('url')}"
+    )
 
 
 def generate_template_scouting_report(player: dict) -> str:
@@ -237,8 +314,44 @@ def generate_template_chat_answer(player: dict, question: str) -> str:
     weakness_text = ", ".join(f"{name} {int(score)}" for name, score in weakest if score)
     score = float(player.get("scouting_score", 0) or 0)
     fit_score = float(player.get("fit_score", 0) or 0) * 100
-    geo_score = float(player.get("geo_score", 0) or 0) * 100
     value_score = float(player.get("value_score", 0) or 0) * 100
+
+    def public_note() -> str:
+        context = fetch_wikipedia_context(player)
+        if not context.get("extract"):
+            return ""
+        return (
+            f"\n\n공개 이력 참고: {context.get('extract')[:450]}"
+            f"\n근거: {context.get('url')}"
+        )
+
+    if any(keyword in question_lower for keyword in ["주발", "preferred", "foot", "발은", "왼발", "오른발"]):
+        preferred_foot = player.get("preferred_foot") or "데이터 없음"
+        weak_foot = player.get("weak_foot") or "데이터 없음"
+        return (
+            f"{player.get('short_name')}의 주발은 {preferred_foot}입니다.\n\n"
+            f"CSV 기준 약발 평점은 {weak_foot}이고, 포지션은 {player.get('player_positions')}입니다. "
+            "주발 정보는 측면 배치, 인버티드 윙어 활용, 빌드업 방향을 판단할 때 우선 확인하면 좋습니다."
+        )
+
+    if any(keyword in question_lower for keyword in ["약발", "weak foot", "weak_foot"]):
+        return (
+            f"{player.get('short_name')}의 약발 평점은 {player.get('weak_foot') or '데이터 없음'}입니다.\n\n"
+            f"주발은 {player.get('preferred_foot') or '데이터 없음'}이고, 개인기 평점은 {player.get('skill_moves') or '데이터 없음'}입니다."
+        )
+
+    if any(keyword in question_lower for keyword in ["개인기", "스킬", "skill move", "skill_moves"]):
+        return (
+            f"{player.get('short_name')}의 개인기 평점은 {player.get('skill_moves') or '데이터 없음'}입니다.\n\n"
+            f"드리블 수치는 {player.get('dribbling') or '데이터 없음'}, 주발은 {player.get('preferred_foot') or '데이터 없음'}입니다."
+        )
+
+    if any(keyword in question_lower for keyword in ["소속팀", "클럽", "팀", "club"]):
+        return (
+            f"{player.get('short_name')}의 현재 소속팀은 {player.get('club_name') or '-'}이고, "
+            f"소속 리그는 {player.get('league_name') or '-'}입니다.\n\n"
+            f"국적은 {player.get('nationality_name')}, 지역은 {player.get('region')}입니다."
+        )
 
     if any(keyword in question_lower for keyword in ["전술", "역할", "포지션", "fit", "role", "tactic", "어디", "활용"]):
         return (
@@ -252,7 +365,7 @@ def generate_template_chat_answer(player: dict, question: str) -> str:
         return (
             f"{player.get('short_name')}의 지역/적응 평가는 국적 {player.get('nationality_name')}, "
             f"지역 {player.get('region')}, 현재 리그 {player.get('league_name') or '-'}를 proxy로 봅니다.\n\n"
-            f"현재 지역 Fit은 {geo_score:.0f}점입니다. CSV에 고향/거주지 직접 컬럼은 없어서, 실제 영입 전에는 출생지, 성장 리그, 언어권, 가족 동반 여부를 추가 확인해야 합니다.\n\n"
+            "현재 랭킹 점수에는 지역 Fit을 반영하지 않습니다. CSV에 고향/거주지 직접 컬럼은 없어서, 실제 영입 전에는 출생지, 성장 리그, 언어권, 가족 동반 여부를 추가 확인해야 합니다.\n\n"
             "데이터 기준으로는 같은 지역/유사 리그 경험이 많을수록 초기 적응 리스크를 낮게 평가하는 방식이 적절합니다."
         )
 
@@ -284,7 +397,11 @@ def generate_template_chat_answer(player: dict, question: str) -> str:
             risks.append("가성비 점수가 낮아 예산 효율 관점에서는 우선순위가 떨어질 수 있습니다")
         if not risks:
             risks.append("데이터상 큰 재정 리스크는 낮지만, 실제 경기력 변동성과 리그 적응은 별도 확인이 필요합니다")
-        return f"{player.get('short_name')} 영입의 가장 큰 리스크는 {risks[0]}.\n\n추가 리스크: " + "; ".join(risks[1:])
+        return (
+            f"{player.get('short_name')} 영입의 가장 큰 리스크는 {risks[0]}.\n\n"
+            f"추가 리스크: {'; '.join(risks[1:]) or '공개 데이터만으로는 추가 리스크를 단정하기 어렵습니다.'}"
+            f"{public_note()}"
+        )
 
     return (
         f"{player.get('short_name')}에 대한 질문을 스카우팅 관점으로 해석하면, 현재는 종합 점수 {score:.1f}의 "
@@ -295,6 +412,7 @@ def generate_template_chat_answer(player: dict, question: str) -> str:
         f"국적/지역은 {player.get('nationality_name')} / {player.get('region')}입니다.\n\n"
         f"영입 판단은 목적에 따라 갈립니다. 즉시전력이라면 OVR와 강점 능력치를, 장기 투자라면 성장 여지 {growth:+.0f}와 나이 {age}세를, "
         f"예산형 영입이라면 시장가치 {money(value)}와 주급 {money(wage)}를 우선 비교하는 것이 좋습니다."
+        f"{public_note()}"
     )
 
 
@@ -304,6 +422,7 @@ def generate_openai_chat_answer(player: dict, question: str) -> str:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    wikipedia_context = fetch_wikipedia_context(player)
     payload = {
         "model": model,
         "input": [
@@ -311,17 +430,26 @@ def generate_openai_chat_answer(player: dict, question: str) -> str:
                 "role": "system",
                 "content": (
                     "너는 축구 클럽 스카우팅 의사결정을 돕는 채팅형 AI Agent다. "
-                    "사용자는 특정 선수를 클릭한 뒤 질문한다. 제공된 FC26 수치만 근거로 한국어로 답한다. "
+                    "사용자는 특정 선수를 클릭한 뒤 자유롭게 질문한다. "
+                    "FC26 수치, 선수 기본 정보, Wikipedia 공개 정보를 함께 사용해 한국어로 답한다. "
                     "birth_place/current_city 컬럼은 없으므로 nationality_name, league_name, club_name, region을 지역/적응 proxy로만 해석한다. "
-                    "답변은 3문단 이내로 간결하게, 영입 판단에 바로 쓸 수 있게 작성한다."
+                    "질문이 '치명적인 단점', '숨은 리스크', '팀 분위기'처럼 정성적이면 공개 이력과 수치 데이터를 연결해 스카우팅 관점으로 추론한다. "
+                    "단, Wikipedia 요약에 없는 발언이나 특정 인물의 인용문은 절대 만들지 않는다. "
+                    "공개 정보에서 확인되는 내용만 근거로 삼고, 추론은 추론이라고 표시한다. "
+                    "Wikipedia 정보를 사용했다면 마지막에 '근거:' 줄로 URL을 붙인다. "
+                    "답변은 4문단 이내로, 단순 수치 나열보다 영입 의사결정에 바로 쓸 수 있는 판단 중심으로 작성한다."
                 ),
             },
             {
                 "role": "user",
-                "content": f"선수 데이터: {compact_player_context(player)}\n\n질문: {question}",
+                "content": (
+                    f"선수 데이터: {compact_player_context(player)}\n\n"
+                    f"{format_wikipedia_context(wikipedia_context)}\n\n"
+                    f"질문: {question}"
+                ),
             },
         ],
-        "max_output_tokens": 650,
+        "max_output_tokens": 950,
     }
     response = requests.post(
         "https://api.openai.com/v1/responses",

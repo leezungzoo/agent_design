@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 import pandas as pd
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-RAW_CSV = ROOT_DIR / "data" / "raw" / "FC26_20250921.csv"
-PLAYER_IMAGE_DIR = ROOT_DIR / "app" / "static" / "player_images"
+from app.core.config import FC26_CSV, PLAYER_IMAGE_DIR
+
+RAW_CSV = FC26_CSV
 
 CORE_COLUMNS = [
     "player_id",
@@ -69,30 +68,54 @@ CORE_COLUMNS = [
 ]
 
 REGION_MAP = {
-    "England": "Europe",
-    "Germany": "Europe",
-    "Spain": "Europe",
-    "France": "Europe",
-    "Italy": "Europe",
-    "Portugal": "Europe",
-    "Netherlands": "Europe",
-    "Belgium": "Europe",
-    "Croatia": "Europe",
-    "Brazil": "South America",
-    "Argentina": "South America",
-    "Uruguay": "South America",
-    "Colombia": "South America",
-    "Chile": "South America",
-    "Morocco": "Africa",
-    "Nigeria": "Africa",
-    "Senegal": "Africa",
-    "Ghana": "Africa",
-    "South Korea": "Asia",
-    "Japan": "Asia",
-    "Australia": "Asia-Pacific",
+    "Afghanistan": "Asia", "Armenia": "Asia", "Azerbaijan": "Asia", "Bangladesh": "Asia",
+    "China PR": "Asia", "Chinese Taipei": "Asia", "Georgia": "Asia", "Hong Kong": "Asia",
+    "India": "Asia", "Indonesia": "Asia", "Iran": "Asia", "Iraq": "Asia", "Israel": "Asia",
+    "Japan": "Asia", "Jordan": "Asia", "Korea Republic": "Asia", "Lebanon": "Asia",
+    "Malaysia": "Asia", "Pakistan": "Asia", "Palestine": "Asia", "Philippines": "Asia",
+    "Qatar": "Asia", "Saudi Arabia": "Asia", "Sri Lanka": "Asia", "Syria": "Asia",
+    "Tajikistan": "Asia", "Thailand": "Asia", "Türkiye": "Asia", "United Arab Emirates": "Asia",
+    "Uzbekistan": "Asia", "Yemen": "Asia",
+    "Albania": "Europe", "Andorra": "Europe", "Austria": "Europe", "Belarus": "Europe",
+    "Belgium": "Europe", "Bosnia and Herzegovina": "Europe", "Bulgaria": "Europe",
+    "Croatia": "Europe", "Cyprus": "Europe", "Czechia": "Europe", "Denmark": "Europe",
+    "England": "Europe", "Estonia": "Europe", "Faroe Islands": "Europe", "Finland": "Europe",
+    "France": "Europe", "Germany": "Europe", "Gibraltar": "Europe", "Greece": "Europe",
+    "Hungary": "Europe", "Iceland": "Europe", "Italy": "Europe", "Kosovo": "Europe",
+    "Latvia": "Europe", "Liechtenstein": "Europe", "Lithuania": "Europe", "Luxembourg": "Europe",
+    "Malta": "Europe", "Moldova": "Europe", "Montenegro": "Europe", "Netherlands": "Europe",
+    "North Macedonia": "Europe", "Northern Ireland": "Europe", "Norway": "Europe",
+    "Poland": "Europe", "Portugal": "Europe", "Republic of Ireland": "Europe",
+    "Romania": "Europe", "Russia": "Europe", "Scotland": "Europe", "Serbia": "Europe",
+    "Slovakia": "Europe", "Slovenia": "Europe", "Spain": "Europe", "Sweden": "Europe",
+    "Switzerland": "Europe", "Ukraine": "Europe", "Wales": "Europe",
+    "Algeria": "Africa", "Angola": "Africa", "Benin": "Africa", "Burkina Faso": "Africa",
+    "Burundi": "Africa", "Cabo Verde": "Africa", "Cameroon": "Africa",
+    "Central African Republic": "Africa", "Chad": "Africa", "Comoros": "Africa",
+    "Congo": "Africa", "Congo DR": "Africa", "Côte d'Ivoire": "Africa", "Egypt": "Africa",
+    "Equatorial Guinea": "Africa", "Gabon": "Africa", "Gambia": "Africa", "Ghana": "Africa",
+    "Guinea": "Africa", "Guinea-Bissau": "Africa", "Kenya": "Africa", "Liberia": "Africa",
+    "Libya": "Africa", "Madagascar": "Africa", "Malawi": "Africa", "Mali": "Africa",
+    "Mauritania": "Africa", "Morocco": "Africa", "Mozambique": "Africa", "Namibia": "Africa",
+    "Niger": "Africa", "Nigeria": "Africa", "Rwanda": "Africa", "Senegal": "Africa",
+    "Sierra Leone": "Africa", "Somalia": "Africa", "South Africa": "Africa",
+    "Tanzania": "Africa", "Togo": "Africa", "Tunisia": "Africa", "Uganda": "Africa",
+    "Zambia": "Africa", "Zimbabwe": "Africa",
+    "Argentina": "South America", "Bolivia": "South America", "Brazil": "South America",
+    "Chile": "South America", "Colombia": "South America", "Ecuador": "South America",
+    "Guyana": "South America", "Paraguay": "South America", "Peru": "South America",
+    "Suriname": "South America", "Uruguay": "South America", "Venezuela": "South America",
+    "Antigua and Barbuda": "North America", "Barbados": "North America",
+    "Bermuda": "North America", "Canada": "North America", "Costa Rica": "North America",
+    "Cuba": "North America", "Curacao": "North America", "Dominican Republic": "North America",
+    "El Salvador": "North America", "Grenada": "North America", "Guatemala": "North America",
+    "Haiti": "North America", "Honduras": "North America", "Jamaica": "North America",
+    "Mexico": "North America", "Montserrat": "North America", "Panama": "North America",
+    "Puerto Rico": "North America", "Saint Kitts and Nevis": "North America",
+    "Saint Lucia": "North America", "Trinidad and Tobago": "North America",
     "United States": "North America",
-    "Mexico": "North America",
-    "Canada": "North America",
+    "Australia": "Oceania", "New Caledonia": "Oceania", "New Zealand": "Oceania",
+    "Vanuatu": "Oceania",
 }
 
 
@@ -108,7 +131,7 @@ def local_player_image_path(player_id: object) -> str:
 
     image_path = PLAYER_IMAGE_DIR / f"{normalized_id}.png"
     if image_path.exists():
-        return f"/static/player_images/{normalized_id}.png"
+        return f"/static/images/players/{normalized_id}.png"
     return ""
 
 

@@ -5,12 +5,15 @@ FC26 선수 데이터셋을 기반으로 가중치별 선수 랭킹과 스카우
 ## 실행
 
 ```bash
-cd ~/Desktop/aigent
-python3 -m venv .venv
-source .venv/bin/activate
+cd /Users/leezungzoo/Desktop/agent_design/aigent
+python3 -m venv app/venv
+source app/venv/bin/activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8001
 ```
+
+웹 실행 진입점은 `app/main.py`입니다.
+위 명령의 `app.main:app`은 `app/main.py` 파일 안에 있는 FastAPI 객체 `app`을 실행한다는 뜻입니다.
 
 브라우저에서 아래 주소로 접속합니다.
 
@@ -55,72 +58,62 @@ OPENAI_MODEL=gpt-4.1-mini
 GET /api/fc26/meta
 GET /api/fc26/players
 GET /api/fc26/report/{player_id}
+POST /api/fc26/chat/{player_id}
 ```
 
-## 전체 타자 데이터 크롤링
+## 선수 이미지 캐시
 
-STATIZ의 타자 기본 지표 테이블을 크롤링해서 앱이 읽는 CSV로 저장합니다.
+CSV의 `player_face_url`을 사용해 선수 이미지를 로컬에 저장할 수 있습니다.
 
 ```bash
-cd ~/Desktop/aigent
-source .venv/bin/activate
-python -m scripts.crawl_batters --year-start 2024 --year-end 2024 --limit 1000 --min-pa 0
+cd /Users/leezungzoo/Desktop/agent_design/aigent
+source app/venv/bin/activate
+python -m scripts.cache_player_images --limit 500
 ```
-
-생성 파일:
-
-```text
-data/raw/statiz_batters_2024_2024.csv
-data/processed/batters.csv
-```
-
-앱은 `data/processed/batters.csv`가 있으면 샘플 데이터 대신 이 파일을 사용합니다.
-현재 기본 STATIZ 테이블에는 RAA가 없을 수 있어 `raa=0`으로 저장합니다.
-RAA가 포함된 URL을 추가하면 `player` 기준으로 병합해 확장하면 됩니다.
-
-현재 STATIZ 기록실이 로그인 페이지를 반환하면 로그인 쿠키가 필요합니다.
-브라우저에서 STATIZ 로그인 후 개발자도구의 Request Headers에서 `Cookie` 값을 복사해 아래처럼 실행합니다.
-
-```bash
-python -m scripts.crawl_batters \
-  --url "브라우저에서 복사한 STATIZ 기록실 URL" \
-  --cookie "PHPSESSID=...; other_cookie=..."
-```
-
-## 2026 전체 선수 목록 크롤링
-
-`https://www.statiz.co.kr/player/`에서 2026년 선수 목록을 크롤링해 CSV로 저장합니다.
-현재 STATIZ 선수 페이지도 로그인 페이지를 반환하므로 로그인 쿠키가 필요합니다.
-
-```bash
-cd ~/Desktop/aigent
-source .venv/bin/activate
-python -m scripts.crawl_players \
-  --year 2026 \
-  --url "https://www.statiz.co.kr/player/" \
-  --cookie "PHPSESSID=...; other_cookie=..."
-```
-
-생성 파일:
-
-```text
-data/processed/statiz_players_2026.csv
-```
-
-웹 앱은 `/api/statiz/players?year=2026`에서 이 CSV를 JSON으로 제공하고,
-메인 화면 하단의 `2026 STATIZ 선수 CSV` 테이블에도 표시합니다.
 
 ## 구조
 
 ```text
-app/
-  main.py          FastAPI 엔트리포인트
-  scoring.py       위험도 점수 계산
-  crawler.py       HTML table 크롤링 유틸
-  sample_data.py   데모용 샘플 데이터
-  templates/
-    index.html
-  static/
-    styles.css
-    app.js
+aigent/
+  app/
+    main.py                    웹 서버 실행 진입점
+    api/
+      fc26.py                  FC26 API 라우터
+    core/
+      config.py                파일 경로, 환경 설정
+    schemas/
+      fc26.py                  요청/응답 데이터 구조
+    services/
+      fc26_agent.py            스카우팅 리포트/채팅 답변 생성
+      fc26_loader.py           CSV 로딩, 필터 옵션 생성
+      fc26_scoring.py          선수 랭킹 점수 계산
+    templates/
+      index.html               메인 웹 화면
+    static/
+      css/
+        styles.css             화면 스타일
+      js/
+        app.js                 화면 상호작용, API 호출
+      images/
+        players/               선수 이미지 캐시
+  data/
+    raw/
+      FC26_20250921.csv        FC26 원본 데이터
+  scripts/
+    cache_player_images.py     선수 이미지 다운로드 스크립트
+  requirements.txt             Python 라이브러리 목록
+  README.md
+```
+
+## 실행 흐름
+
+```text
+app/main.py
+  -> app/api/fc26.py
+    -> app/services/fc26_loader.py
+    -> app/services/fc26_scoring.py
+    -> app/services/fc26_agent.py
+  -> app/templates/index.html
+  -> app/static/css/styles.css
+  -> app/static/js/app.js
 ```

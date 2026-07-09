@@ -5,11 +5,10 @@ import math
 import pandas as pd
 
 PRESETS = {
-    "balanced": {"ability": 0.35, "potential": 0.25, "value": 0.15, "fit": 0.15, "geo": 0.10},
-    "ready_now": {"ability": 0.50, "potential": 0.10, "value": 0.15, "fit": 0.20, "geo": 0.05},
-    "prospect": {"ability": 0.20, "potential": 0.45, "value": 0.15, "fit": 0.15, "geo": 0.05},
-    "value": {"ability": 0.25, "potential": 0.15, "value": 0.40, "fit": 0.15, "geo": 0.05},
-    "geo": {"ability": 0.25, "potential": 0.20, "value": 0.15, "fit": 0.15, "geo": 0.25},
+    "balanced": {"ability": 0.45, "potential": 0.45, "value": 0.15, "fit": 0.15},
+    "ready_now": {"ability": 0.55, "potential": 0.40, "value": 0.15, "fit": 0.20},
+    "prospect": {"ability": 0.25, "potential": 0.45, "value": 0.15, "fit": 0.15},
+    "value": {"ability": 0.30, "potential": 0.45, "value": 0.40, "fit": 0.15},
 }
 
 POSITION_RATING_COLUMNS = {
@@ -111,17 +110,6 @@ def fit_score(df: pd.DataFrame, position: str = "") -> pd.Series:
     return normalize(rating) * 0.60 + primary * 0.25 + any_match * 0.15
 
 
-def geo_score(df: pd.DataFrame, country: str = "", region: str = "", league: str = "") -> pd.Series:
-    score = pd.Series(0.3, index=df.index)
-    if country:
-        score += df["nationality_name"].str.lower().eq(country.lower()).astype(float) * 0.4
-    if region:
-        score += df["region"].str.lower().eq(region.lower()).astype(float) * 0.3
-    if league:
-        score += df["league_name"].str.lower().eq(league.lower()).astype(float) * 0.2
-    return score.clip(upper=1.0)
-
-
 def rank_players(
     df: pd.DataFrame,
     position: str = "",
@@ -144,12 +132,11 @@ def rank_players(
     wage_efficiency = result["overall"] / result["wage_eur"].apply(lambda v: math.log(float(v) + 1) + 1)
     result["value_score"] = normalize(value_efficiency) * 0.6 + normalize(wage_efficiency) * 0.4
     result["fit_score"] = fit_score(result, position)
-    result["geo_score"] = geo_score(result, country=country, region=region, league=league)
+    result["geo_score"] = 0.0
     result["scouting_score"] = (
         result["ability_score"] * weights["ability"]
         + result["potential_score"] * weights["potential"]
         + result["value_score"] * weights["value"]
         + result["fit_score"] * weights["fit"]
-        + result["geo_score"] * weights["geo"]
     ) * 100
     return result.sort_values("scouting_score", ascending=False)
