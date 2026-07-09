@@ -1,18 +1,17 @@
 # FC26 Player Scouting Agent
 
-FC26 선수 데이터셋을 기반으로 가중치별 선수 랭킹과 스카우팅 리포트를 생성하는 로컬 FastAPI 웹 앱입니다.
+축구게임인 FC26 선수 데이터셋을 기반으로 실제 스카우팅에 쓸 축구선수를 데이터 가중치로 랭킹을 나누고, 스카우팅 리포트를 생성하는 로컬 FastAPI 웹입니다.
 
 ## 실행
 
 ```bash
-cd /Users/leezungzoo/Desktop/agent_design/aigent
 python3 -m venv app/venv
 source app/venv/bin/activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
-웹 실행 진입점은 `app/main.py`입니다.
+실행 파일은 `app/main.py`입니다.
 위 명령의 `app.main:app`은 `app/main.py` 파일 안에 있는 FastAPI 객체 `app`을 실행한다는 뜻입니다.
 
 브라우저에서 아래 주소로 접속합니다.
@@ -30,6 +29,10 @@ http://127.0.0.1:8001
 - 가중치 기반 스카우팅 점수 계산
 - 선수별 AI 스카우팅 리포트 생성
 - 국적, 리그, 클럽을 활용한 지역/고향 proxy 반영
+- 나의 팀 스쿼드 선택 
+- AI로 영입 추천 선수 받음
+- 나의 팀 스쿼드 점수 (종합, OVR, POT)
+
 
 ## 데이터 준비
 
@@ -39,7 +42,6 @@ http://127.0.0.1:8001
 data/raw/FC26_20250921.csv
 ```
 
-현재 작업에서는 `/Users/leezungzoo/Desktop/FC26_20250921.csv`를 복사해 사용합니다.
 
 ## OpenAI 리포트
 
