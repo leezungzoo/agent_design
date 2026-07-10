@@ -7,8 +7,15 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import SQUAD_SAVE_FILE
 from app.schemas.fc26 import ChatRequest
-from app.services.fc26_agent import answer_scouting_question, generate_scouting_report
+from app.services.fc26_agent import answer_scouting_question_with_middleware, generate_scouting_report
 from app.services.fc26_loader import data_exists, get_filter_options, load_fc26_players
+from app.services.fc26_middleware import (
+    approve_session,
+    get_session,
+    middleware_state,
+    reset_session,
+    update_session_config,
+)
 from app.services.fc26_scoring import PRESETS, rank_players
 
 router = APIRouter(prefix="/api/fc26", tags=["fc26"])
@@ -304,6 +311,7 @@ def chat(
     region: str = "",
     league: str = "",
     preset: str = "balanced",
+    session_id: str = Query("default"),
 ):
     question = request.question.strip()
     if not question:
@@ -316,8 +324,36 @@ def chat(
     ranked = rank_players(df, position=position, preset=preset, country=nationality, region=region, league=league)
     selected = ranked[ranked["player_id"] == player_id]
     player = selected.iloc[0].fillna("").to_dict()
-    answer, source = answer_scouting_question(player, question)
-    return {"player": player, "question": question, "answer": answer, "source": source}
+    answer, source, middleware = answer_scouting_question_with_middleware(player, question, session_id=session_id)
+    return {"player": player, "question": question, "answer": answer, "source": source, "middleware": middleware}
+
+
+@router.get("/session/status")
+def session_status(session_id: str = Query("default")):
+    return {"success": True, **middleware_state(get_session(session_id))}
+
+
+@router.post("/session/config")
+def session_config(payload: dict):
+    session_id = payload.get("sessionId") or payload.get("session_id") or "default"
+    config = payload.get("config") or {}
+    return {"success": True, "config": update_session_config(session_id, config)}
+
+
+@router.post("/session/approve")
+def session_approve(payload: dict):
+    session_id = payload.get("sessionId") or payload.get("session_id") or "default"
+    approved = bool(payload.get("approved"))
+    if approve_session(session_id, approved):
+        return {"success": True, "status": "approved" if approved else "rejected"}
+    return {"success": False, "error": "대기 중인 승인 요청이 없습니다."}
+
+
+@router.post("/session/reset")
+def session_reset(payload: dict):
+    session_id = payload.get("sessionId") or payload.get("session_id") or "default"
+    reset_session(session_id)
+    return {"success": True}
 
 
 @router.post("/squads")

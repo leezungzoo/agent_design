@@ -6,6 +6,14 @@ from urllib.parse import quote
 import requests
 
 from app.core.config import ENV_PATH
+from app.services.fc26_middleware import (
+    get_session,
+    human_in_the_loop_middleware,
+    middleware_state,
+    model_call_limit_middleware,
+    summarization_middleware,
+    tool_call_limit_middleware,
+)
 
 try:
     from dotenv import load_dotenv
@@ -416,13 +424,14 @@ def generate_template_chat_answer(player: dict, question: str) -> str:
     )
 
 
-def generate_openai_chat_answer(player: dict, question: str) -> str:
+def generate_openai_chat_answer(player: dict, question: str, wikipedia_context: dict | None = None) -> str:
     api_key = get_openai_api_key()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-    wikipedia_context = fetch_wikipedia_context(player)
+    if wikipedia_context is None:
+        wikipedia_context = fetch_wikipedia_context(player)
     payload = {
         "model": model,
         "input": [
@@ -480,3 +489,47 @@ def answer_scouting_question(player: dict, question: str) -> tuple[str, str]:
         return generate_openai_chat_answer(player, question), "openai"
     except Exception:
         return generate_template_chat_answer(player, question), "template_fallback"
+
+
+def answer_scouting_question_with_middleware(
+    player: dict,
+    question: str,
+    session_id: str = "default",
+) -> tuple[str, str, dict]:
+    session = get_session(session_id)
+    summary = summarization_middleware(session)
+
+    wikipedia_context = {}
+    try:
+        tool_call_limit_middleware(session)
+        approval = human_in_the_loop_middleware(
+            session,
+            "fetch_wikipedia_context",
+            {
+                "player_id": player.get("player_id"),
+                "short_name": player.get("short_name"),
+            },
+        )
+        if approval["approved"]:
+            wikipedia_context = fetch_wikipedia_context(player)
+    except Exception:
+        wikipedia_context = {}
+
+    try:
+        model_call_limit_middleware(session)
+        context_question = question
+        if summary:
+            context_question = f"이전 대화 요약: {summary}\n\n현재 질문: {question}"
+        answer = generate_openai_chat_answer(player, context_question, wikipedia_context=wikipedia_context)
+        source = "openai"
+    except Exception as exc:
+        if str(exc).startswith("[modelCallLimit]"):
+            answer = str(exc)
+            source = "middleware_blocked"
+        else:
+            answer = generate_template_chat_answer(player, question)
+            source = "template_fallback"
+
+    session["messages"].append({"role": "user", "content": question})
+    session["messages"].append({"role": "assistant", "content": answer})
+    return answer, source, middleware_state(session)
