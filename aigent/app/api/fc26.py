@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
@@ -19,6 +20,11 @@ from app.services.fc26_middleware import (
 from app.services.fc26_scoring import PRESETS, rank_players
 
 router = APIRouter(prefix="/api/fc26", tags=["fc26"])
+
+try:
+    import oracledb
+except ImportError:
+    oracledb = None
 
 
 def has_position(position_text, position: str) -> bool:
@@ -52,6 +58,176 @@ def selected_plan_from_payload(payload: dict) -> tuple[str, dict]:
     plan_key = controls.get("plan") or "base"
     squad_state = payload.get("squadState") or {}
     return plan_key, squad_state.get(plan_key) or squad_state.get("base") or {}
+
+
+def oracle_configured() -> bool:
+    return bool(os.getenv("ORACLE_USER") and os.getenv("ORACLE_PASSWORD") and os.getenv("ORACLE_DSN"))
+
+
+def connect_oracle():
+    if oracledb is None:
+        raise RuntimeError("oracledb 패키지가 설치되어 있지 않습니다.")
+    if not oracle_configured():
+        raise RuntimeError("ORACLE_USER, ORACLE_PASSWORD, ORACLE_DSN 환경변수가 필요합니다.")
+    return oracledb.connect(
+        user=os.getenv("ORACLE_USER"),
+        password=os.getenv("ORACLE_PASSWORD"),
+        dsn=os.getenv("ORACLE_DSN"),
+    )
+
+
+def safe_number(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def save_squad_to_oracle(payload: dict) -> int:
+    controls = payload.get("controls") or {}
+    plan_key, plan = selected_plan_from_payload(payload)
+    starters = plan.get("starters") or {}
+    labels = plan.get("labels") or {}
+    selected_players = [player for player in starters.values() if player]
+    avg_overall = (
+        sum(safe_number(player.get("overall")) for player in selected_players) / len(selected_players)
+        if selected_players
+        else 0
+    )
+    avg_potential = (
+        sum(safe_number(player.get("potential")) for player in selected_players) / len(selected_players)
+        if selected_players
+        else 0
+    )
+    squad_score = (
+        sum(safe_number(player.get("scouting_score")) for player in selected_players) / len(selected_players)
+        if selected_players
+        else 0
+    )
+    max_posting_fee = safe_number(
+        controls.get("maxPostingFee")
+        or controls.get("max_posting_fee")
+        or controls.get("budget")
+        or controls.get("postingFee")
+    )
+
+    with connect_oracle() as connection:
+        cursor = connection.cursor()
+        squad_id_var = cursor.var(oracledb.NUMBER)
+        cursor.execute(
+            """
+            INSERT INTO SCOUT_APP.SCOUT_SQUADS (
+                SQUAD_NAME,
+                TEAM_LEAGUE,
+                TEAM_CLUB,
+                FORMATION,
+                PLAN_NAME,
+                MAX_POSTING_FEE,
+                SQUAD_SCORE,
+                AVG_OVERALL,
+                AVG_POTENTIAL
+            )
+            VALUES (
+                :squad_name,
+                :team_league,
+                :team_club,
+                :formation,
+                :plan_name,
+                :max_posting_fee,
+                :squad_score,
+                :avg_overall,
+                :avg_potential
+            )
+            RETURNING SQUAD_ID INTO :squad_id
+            """,
+            {
+                "squad_name": controls.get("teamClub") or "Saved Squad",
+                "team_league": controls.get("teamLeague"),
+                "team_club": controls.get("teamClub"),
+                "formation": controls.get("formation"),
+                "plan_name": plan_key,
+                "max_posting_fee": max_posting_fee,
+                "squad_score": squad_score,
+                "avg_overall": avg_overall,
+                "avg_potential": avg_potential,
+                "squad_id": squad_id_var,
+            },
+        )
+        squad_id = int(squad_id_var.getvalue()[0])
+
+        player_rows = []
+        for slot_code, player in starters.items():
+            if not player:
+                continue
+            player_rows.append(
+                {
+                    "squad_id": squad_id,
+                    "slot_code": slot_code,
+                    "slot_label": labels.get(slot_code) or slot_code,
+                    "player_id": player.get("player_id"),
+                    "player_name": player.get("short_name") or player.get("long_name"),
+                    "position_text": player.get("player_positions"),
+                    "scouting_score": safe_number(player.get("scouting_score")),
+                    "overall": safe_number(player.get("overall")),
+                    "potential": safe_number(player.get("potential")),
+                }
+            )
+
+        if player_rows:
+            cursor.executemany(
+                """
+                INSERT INTO SCOUT_APP.SCOUT_SQUAD_PLAYERS (
+                    SQUAD_ID,
+                    SLOT_CODE,
+                    SLOT_LABEL,
+                    PLAYER_ID,
+                    PLAYER_NAME,
+                    POSITION_TEXT,
+                    SCOUTING_SCORE,
+                    OVERALL,
+                    POTENTIAL
+                )
+                VALUES (
+                    :squad_id,
+                    :slot_code,
+                    :slot_label,
+                    :player_id,
+                    :player_name,
+                    :position_text,
+                    :scouting_score,
+                    :overall,
+                    :potential
+                )
+                """,
+                player_rows,
+            )
+
+        cursor.execute(
+            """
+            INSERT INTO SCOUT_APP.SCOUT_BUDGET_SETTINGS (
+                SETTING_NAME,
+                MAX_POSTING_FEE,
+                CURRENCY,
+                NOTE
+            )
+            VALUES (
+                :setting_name,
+                :max_posting_fee,
+                :currency,
+                :note
+            )
+            """,
+            {
+                "setting_name": f"{controls.get('teamClub') or 'Saved Squad'} budget",
+                "max_posting_fee": max_posting_fee,
+                "currency": controls.get("currency") or "EUR",
+                "note": f"Saved from squad builder, plan={plan_key}, formation={controls.get('formation') or '-'}",
+            },
+        )
+        connection.commit()
+        return squad_id
 
 
 def format_money(value: float) -> str:
@@ -364,7 +540,13 @@ def save_squad(payload: dict):
         "squad": payload,
     }
     SQUAD_SAVE_FILE.write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"ok": True, "path": str(SQUAD_SAVE_FILE)}
+    db_result = {"saved": False}
+    try:
+        squad_id = save_squad_to_oracle(payload)
+        db_result = {"saved": True, "squadId": squad_id}
+    except Exception as exc:
+        db_result = {"saved": False, "error": str(exc)}
+    return {"ok": True, "path": str(SQUAD_SAVE_FILE), "database": db_result}
 
 
 @router.post("/team-analysis")
