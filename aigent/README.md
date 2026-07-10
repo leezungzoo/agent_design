@@ -16,10 +16,12 @@ FC26 Player Scouting Agent는 FC26 선수 CSV 데이터를 기반으로 선수 �
 - 가중치 기반 선수 랭킹
 - 선수별 스카우팅 리포트
 - OpenAI 기반 Chat Agent
+- Middleware 기반 Chat Agent 실행 제어
+- OpenAI 실패 시 로컬 미니 분석 fallback
 - Wikipedia 공개 이력 기반 보조 정보
 - 나의 팀 자동 스쿼드 구성
 - 팀 약점 분석 및 구매 추천
-- 스쿼드 저장
+- 스쿼드 저장 및 저장 스쿼드 기준 포지션 역할 브리핑
 
 ## 2. 데이터 파이프라인 구조
 
@@ -47,6 +49,7 @@ Serve 제공
   - FastAPI REST API
   - 웹 대시보드
   - 스카우팅 Chat Agent
+  - Middleware 세션 상태 및 호출 제한 관리
 ```
 
 ## 3. 실행 환경
@@ -80,6 +83,7 @@ aigent/
       fc26.py                  요청 데이터 스키마
     services/
       fc26_agent.py            AI 리포트/채팅 답변 생성
+      fc26_middleware.py       Chat Agent middleware 세션/호출 제어
       fc26_loader.py           CSV 로딩 및 전처리
       fc26_scoring.py          선수 점수 계산
     templates/
@@ -210,7 +214,8 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-OpenAI 키가 없거나 API 호출에 실패하면 로컬 템플릿 리포트로 자동 fallback됩니다.
+OpenAI 키가 없거나 API 호출에 실패하면 로컬 미니 분석 답변으로 자동 fallback됩니다.
+이 fallback은 단순 고정 문장이 아니라 선수 능력치, 포지션, 시장가치, 주급, 성장성, 약점, 저장 스쿼드 정보를 조합해 질문 의도별 답변을 생성합니다.
 
 Oracle DB 사용 시:
 
@@ -425,6 +430,10 @@ GET  /api/fc26/report/{player_id}
 POST /api/fc26/chat/{player_id}
 POST /api/fc26/team-analysis
 POST /api/fc26/squads
+GET  /api/fc26/session/status
+POST /api/fc26/session/config
+POST /api/fc26/session/approve
+POST /api/fc26/session/reset
 ```
 
 ## 14. 주요 기능 사용 방법
@@ -437,8 +446,54 @@ POST /api/fc26/squads
 6. 선택 팀 기준 자동 스쿼드 구성 확인
 7. 팀 AI 분석과 구매 추천 선수 확인
 8. 저장 버튼으로 스쿼드 저장
+9. 저장된 스쿼드를 기준으로 선수 활용 위치와 포지션 역할 질문
 
-## 15. 선수 이미지 캐시
+Chat Agent 질문 예시:
+
+```text
+이 선수 영입하면 어때?
+이 선수 우리 팀에 왜 필요해?
+단점까지 포함해서 이 선수 어떻게 써야 해?
+이 선수를 저장된 스쿼드에서 어디로 쓸 수 있을까?
+저장된 스쿼드 기준으로 이 선수 포지션 역할 브리핑해줘.
+위키피디아 공개 정보를 더 자세히 보여줘.
+```
+
+## 15. Middleware 및 Agent 응답 구조
+
+이 프로젝트의 Chat Agent는 `fc26_middleware.py`를 통해 세션 단위로 실행 상태를 관리합니다.
+
+Middleware 제공 기능:
+
+- `modelRunLimit`: LLM 호출 횟수 제한
+- `toolRunLimit`: Wikipedia 같은 외부 도구 호출 횟수 제한
+- `summarizeThreshold`: 대화가 길어졌을 때 이전 대화를 요약
+- `humanInTheLoop`: 필요 시 도구 호출 승인 흐름 제공
+- `session status`: 현재 세션의 호출 횟수, 로그, 요약 상태 확인
+
+응답 생성 순서:
+
+```text
+1. 사용자가 선수를 선택하고 질문 입력
+2. 저장 스쿼드 질문이면 squads.json 기준으로 우선 답변
+3. Wikipedia 공개 정보가 필요한 경우 도구 호출
+4. OpenAI API 호출 시도
+5. OpenAI 실패 또는 키 미설정 시 local_mini_fallback 실행
+6. 답변과 middleware 상태를 API 응답으로 반환
+```
+
+`local_mini_fallback`은 다음 질문 유형을 로컬 데이터만으로 분석합니다.
+
+- 영입 판단
+- 전술 활용
+- 포지션 배치
+- 단점 및 리스크
+- 성장 가능성
+- 이적료, 주급, 가성비
+- 저장 스쿼드 기준 역할 브리핑
+- Wikipedia 공개 정보 요약
+
+## 16. 선수 이미지 캐시
 
 CSV의 `player_face_url`을 사용해 선수 이미지를 로컬에 저장할 수 있습니다.
 
@@ -456,7 +511,7 @@ source app/venv/bin/activate
 python -m scripts.cache_player_images --limit 500
 ```
 
-## 16. 제출용 캡처 체크리스트
+## 17. 제출용 캡처 체크리스트
 
 ```text
 1. OCI Compute VM 인스턴스 화면
@@ -472,7 +527,7 @@ python -m scripts.cache_player_images --limit 500
 11. 팀 AI 분석 및 구매 추천 화면
 ```
 
-## 17. 문제 해결
+## 18. 문제 해결
 
 ### ModuleNotFoundError
 
@@ -519,6 +574,9 @@ Ctrl + C
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
+OpenAI API 키가 없거나 잘못된 경우에도 서비스는 중단되지 않고 `local_mini_fallback`으로 답변합니다.
+다만 이 경우 실제 LLM 추론이 아니라 FC26 CSV, 저장 스쿼드 JSON, Wikipedia 공개 정보 기반의 규칙형 분석 응답입니다.
+
 ### CSV 없음
 
 아래 파일이 존재해야 합니다.
@@ -547,7 +605,17 @@ sudo fsck -y /dev/sdb
 sudo mount /dev/sdb /mnt/iscsi
 ```
 
-## 18. 최종 제출 형태
+## 19. 개선할 점
+
+향후 개선 방향:
+
+- Agent 응답 품질을 단순 규칙형 fallback에서 더 발전시켜, 사용자의 질문 맥락을 장기적으로 기억하고 의도를 세밀하게 분류하는 LLM형 어시스턴트 구조로 고도화할 필요가 있습니다.
+- 저장된 스쿼드, 이전 대화, 예산 조건, 포메이션 변화까지 함께 고려하는 컨텍스트 메모리 기반 의사결정 보조 기능을 강화해야 합니다.
+- OpenAI API 사용 가능 상태와 fallback 상태를 UI에서 명확히 표시해 사용자가 현재 답변 근거와 추론 수준을 쉽게 구분할 수 있도록 개선해야 합니다.
+- Oracle DB 저장 데이터를 API 응답과 더 긴밀히 연결해, JSON 파일뿐 아니라 DB 기반 스쿼드 이력 조회와 비교 분석까지 확장할 수 있습니다.
+- 선수 비교 질문에서 두 명 이상의 선수를 자동 인식하고 능력치, 비용, 전술 적합도를 표 형태로 비교하는 기능을 추가할 수 있습니다.
+
+## 20. 최종 제출 형태
 
 제출 자료에는 아래를 포함합니다.
 
@@ -565,4 +633,3 @@ sudo mount /dev/sdb /mnt/iscsi
 ```text
 FC26 CSV 데이터를 OCI VM/Block Volume에 저장하고 Python으로 전처리 및 점수화한 뒤, FastAPI 웹 서비스와 OpenAI 기반 Chat Agent로 스카우팅 결과를 제공하는 OCI 기반 데이터 파이프라인 프로젝트입니다.
 ```
-

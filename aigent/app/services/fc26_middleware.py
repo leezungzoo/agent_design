@@ -20,8 +20,8 @@ def get_session(session_id: str) -> dict[str, Any]:
             "pending_approval": None,
             "messages": [],
             "config": {
-                "modelRunLimit": 5,
-                "toolRunLimit": 3,
+                "modelRunLimit": 100,
+                "toolRunLimit": 100,
                 "summarizeThreshold": 4,
                 "requireApproval": False,
             },
