@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.core.config import SQUAD_SAVE_FILE
+from app.core.config import ENV_PATH, SQUAD_SAVE_FILE
 from app.schemas.fc26 import ChatRequest
 from app.services.fc26_agent import answer_scouting_question_with_middleware, generate_scouting_report
 from app.services.fc26_loader import data_exists, get_filter_options, load_fc26_players
@@ -20,6 +20,15 @@ from app.services.fc26_middleware import (
 from app.services.fc26_scoring import PRESETS, rank_players
 
 router = APIRouter(prefix="/api/fc26", tags=["fc26"])
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+
+load_dotenv(ENV_PATH)
 
 try:
     import oracledb
